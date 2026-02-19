@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.33;
+pragma solidity ^0.8.33;
 
 import {IRedPacket} from "../interfaces/IRedPacket.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 import {RedPacketStorage} from "./RedPacketStorage.sol";
 
 abstract contract RedPacketBase is RedPacketStorage, IRedPacket {
-    using SafeERC20 for IERC20;
-
     uint256 constant VERIFY_WHITELIST = 1 << uint256(VerifyType.WHITELIST);
     uint256 constant VERIFY_BLACKLIST = 1 << uint256(VerifyType.BLACKLIST);
     uint256 constant VERIFY_HAS_ENOUGH_BALANCE = 1 << uint256(VerifyType.HAS_ENOUGH_BALANCE);
@@ -28,6 +23,8 @@ abstract contract RedPacketBase is RedPacketStorage, IRedPacket {
     );
     event RedPacketClaimed(address indexed redPacketAddress, address indexed claimer, uint256 amount);
     event RedPacketRefunded(address indexed redPacketAddress, address indexed creator, uint256 amount);
+    event WhitelistUpdated(address indexed redPacketAddress, address indexed user, bool allowed);
+    event BlacklistUpdated(address indexed redPacketAddress, address indexed user, bool blocked);
 
     function _initialize(RedPacketInitializer memory initializer) internal {
         // 基础参数校验
@@ -43,18 +40,11 @@ abstract contract RedPacketBase is RedPacketStorage, IRedPacket {
         } else {
             require(msg.value == 0, "ERC20 red packet should not include native token");
             require(initializer.totalAmount > 0, "TotalAmount cannot be zero for ERC20 red packet");
-            IERC20(initializer.token).safeTransferFrom(initializer.creator, address(this), initializer.totalAmount);
         }
         require(initializer.totalAmount > 0, "Total amount must be greater than 0");
         require(initializer.totalAmount >= initializer.totalShares, "Total amount must be at least equal to total shares");
 
         // 验证参数校验
-        if ((initializer.verifyFlags & VERIFY_WHITELIST) != 0) {
-            require(initializer.whitelistRoot != bytes32(0), "Whitelist root cannot be empty when whitelist verification is enabled");
-        }
-        if ((initializer.verifyFlags & VERIFY_BLACKLIST) != 0) {
-            require(initializer.blacklistRoot != bytes32(0), "Blacklist root cannot be empty when blacklist verification is enabled");
-        }
         if ((initializer.verifyFlags & VERIFY_HAS_ENOUGH_BALANCE) != 0) {
             require(initializer.minBalance > 0, "Min balance must be greater than 0 when balance verification is enabled");
         }
@@ -70,31 +60,27 @@ abstract contract RedPacketBase is RedPacketStorage, IRedPacket {
         endTime = uint40(initializer.endTime);
         packetType = initializer.redPacketType;
         verifyFlags = initializer.verifyFlags;
-        whitelistRoot = initializer.whitelistRoot;
-        blacklistRoot = initializer.blacklistRoot;
         minBalance = initializer.minBalance;
     }
 
-    function _verifyWhitelist(address claimer, bytes32[] calldata whitelistProof) internal view returns (bool) {
-        bytes32 leaf = keccak256(abi.encodePacked(claimer));
-        return MerkleProof.verify(whitelistProof, whitelistRoot, leaf);
+    function _verifyWhitelist(address claimer) internal view returns (bool) {
+        return whitelist[claimer];
     }
 
-    function _verifyBlacklist(address claimer, bytes32[] calldata blacklistProof) internal view returns (bool) {
-        bytes32 leaf = keccak256(abi.encodePacked(claimer));
-        return MerkleProof.verify(blacklistProof, blacklistRoot, leaf);
+    function _verifyBlacklist(address claimer) internal view returns (bool) {
+        return blacklist[claimer];
     }
 
     function _verifyHasEnoughBalance(address claimer) internal view returns (bool) {
         return claimer.balance >= minBalance;
     }
 
-    function _verifyClaim(address claimer, bytes32[] calldata whitelistProof, bytes32[] calldata blacklistProof) internal view {
+    function _verifyClaim(address claimer) internal view {
         if ((verifyFlags & VERIFY_WHITELIST) != 0) {
-            require(_verifyWhitelist(claimer, whitelistProof), "Not in whitelist");
+            require(_verifyWhitelist(claimer), "Not in whitelist");
         }
         if ((verifyFlags & VERIFY_BLACKLIST) != 0) {
-            require(!_verifyBlacklist(claimer, blacklistProof), "In blacklist");
+            require(!_verifyBlacklist(claimer), "In blacklist");
         }
         if ((verifyFlags & VERIFY_HAS_ENOUGH_BALANCE) != 0) {
             require(_verifyHasEnoughBalance(claimer), "Not enough balance");
@@ -102,5 +88,13 @@ abstract contract RedPacketBase is RedPacketStorage, IRedPacket {
         require(block.timestamp >= startTime, "Red packet not started");
         require(block.timestamp <= endTime, "Red packet expired");
         require(remainShares > 0, "No shares left");
+    }
+
+    function getWhitelistStatus(address user) external view override returns (bool) {
+        return whitelist[user];
+    }
+
+    function getBlacklistStatus(address user) external view override returns (bool) {
+        return blacklist[user];
     }
 }

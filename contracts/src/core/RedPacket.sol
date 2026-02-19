@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.33;
+pragma solidity ^0.8.33;
 
 import {RedPacketBase} from "./RedPacketBase.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -27,8 +27,8 @@ contract RedPacket is RedPacketBase, Initializable, OwnableUpgradeable {
         );
     }
 
-    function claim(bytes32[] calldata whitelistProof, bytes32[] calldata blacklistProof) external override {
-        _verifyClaim(msg.sender, whitelistProof, blacklistProof);
+    function claim() external override {
+        _verifyClaim(msg.sender);
         require(claimed[msg.sender] == false, "Already claimed");
 
         uint256 amountToClaim;
@@ -85,7 +85,99 @@ contract RedPacket is RedPacketBase, Initializable, OwnableUpgradeable {
         emit RedPacketRefunded(address(this), owner(), refundAmount);
     }
 
+    function setWhitelist(address user, bool allowed) external override onlyOwner {
+        _setWhitelist(user, allowed);
+        emit WhitelistUpdated(address(this), user, allowed);
+    }
+
+    function setWhitelistBatch(address[] calldata users, bool allowed) external override onlyOwner {
+        require(users.length > 0, "empty users");
+        for (uint256 i = 0; i < users.length; i++) {
+            _setWhitelist(users[i], allowed);
+            emit WhitelistUpdated(address(this), users[i], allowed);
+        }
+    }
+
+    function setBlacklist(address user, bool blocked) external override onlyOwner {
+        _setBlacklist(user, blocked);
+        emit BlacklistUpdated(address(this), user, blocked);
+    }
+
+    function setBlacklistBatch(address[] calldata users, bool blocked) external override onlyOwner {
+        require(users.length > 0, "empty users");
+        for (uint256 i = 0; i < users.length; i++) {
+            _setBlacklist(users[i], blocked);
+            emit BlacklistUpdated(address(this), users[i], blocked);
+        }
+    }
+
+    // 获取白名单和黑名单列表，主要用于前端展示，不要在链上频繁调用，尤其是当名单较长时
+    function getWhitelist() external view override returns (address[] memory) {
+        return whitelistUsers;
+    }
+
+    // 同上，获取黑名单列表
+    function getBlacklist() external view override returns (address[] memory) {
+        return blacklistUsers;
+    }
+
     function isRedPacketActive() external view returns (bool) {
         return block.timestamp >= startTime && block.timestamp <= endTime && remainShares > 0;
+    }
+
+    function _setWhitelist(address user, bool allowed) internal {
+        if (allowed) {
+            if (!whitelist[user]) {
+                whitelist[user] = true;
+                whitelistUsers.push(user);
+                whitelistIndexPlusOne[user] = whitelistUsers.length;
+            }
+        } else if (whitelist[user]) {
+            whitelist[user] = false;
+            _removeWhitelistUser(user);
+        }
+    }
+
+    function _setBlacklist(address user, bool blocked) internal {
+        if (blocked) {
+            if (!blacklist[user]) {
+                blacklist[user] = true;
+                blacklistUsers.push(user);
+                blacklistIndexPlusOne[user] = blacklistUsers.length;
+            }
+        } else if (blacklist[user]) {
+            blacklist[user] = false;
+            _removeBlacklistUser(user);
+        }
+    }
+
+    function _removeWhitelistUser(address user) internal {
+        uint256 indexPlusOne = whitelistIndexPlusOne[user];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = whitelistUsers.length - 1;
+        if (index != lastIndex) {
+            address lastUser = whitelistUsers[lastIndex];
+            whitelistUsers[index] = lastUser;
+            whitelistIndexPlusOne[lastUser] = index + 1;
+        }
+        whitelistUsers.pop();
+        whitelistIndexPlusOne[user] = 0;
+    }
+
+    function _removeBlacklistUser(address user) internal {
+        uint256 indexPlusOne = blacklistIndexPlusOne[user];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = blacklistUsers.length - 1;
+        if (index != lastIndex) {
+            address lastUser = blacklistUsers[lastIndex];
+            blacklistUsers[index] = lastUser;
+            blacklistIndexPlusOne[lastUser] = index + 1;
+        }
+        blacklistUsers.pop();
+        blacklistIndexPlusOne[user] = 0;
     }
 }

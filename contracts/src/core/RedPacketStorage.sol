@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.33;
+pragma solidity ^0.8.33;
 
 import {IRedPacketEnumDef} from "../interfaces/IRedPacket.sol";
 
@@ -16,15 +16,19 @@ contract RedPacketStorage is IRedPacketEnumDef {
     uint32 totalShares; // 红包总份数
     uint32 remainShares; // 红包剩余份数
 
-    // slot 2-6
+    // slot 2-4
     uint256 totalAmount; // 红包总金额
     uint256 remainAmount; // 红包剩余金额
     uint256 minBalance; // 最小余额要求，仅当 verifyFlags 包含 HAS_ENOUGH_BALANCE 时有效
-    bytes32 whitelistRoot; // 白名单 Merkle Root，仅当 verifyFlags 包含 WHITELIST 时有效
-    bytes32 blacklistRoot; // 黑名单 Merkle Root，仅当 verifyFlags 包含 BLACKLIST 时有效
 
     mapping(address => uint256) claimAmount; // 记录每个地址领取金额
     mapping(address => bool) claimed; // 记录每个地址是否已领取
+    mapping(address => bool) whitelist; // 白名单地址集合
+    mapping(address => bool) blacklist; // 黑名单地址集合
+    address[] whitelistUsers; // 白名单地址列表
+    address[] blacklistUsers; // 黑名单地址列表
+    mapping(address => uint256) whitelistIndexPlusOne; // 白名单地址在 whitelistUsers 中的索引 + 1
+    mapping(address => uint256) blacklistIndexPlusOne; // 黑名单地址在 blacklistUsers 中的索引 + 1
 
     uint256[50] private _gap; // 预留存储空间，允许未来添加新的状态变量而不影响现有布局
 }
